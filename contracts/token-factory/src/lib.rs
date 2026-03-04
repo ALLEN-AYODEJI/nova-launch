@@ -11,15 +11,8 @@ mod pagination;
 mod mint;
 mod treasury;
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String};
-use types::{ContractMetadata, Error, FactoryState, TokenInfo};
-
-// Contract metadata constants
-const CONTRACT_NAME: &str = "Nova Launch Token Factory";
-const CONTRACT_DESCRIPTION: &str = "No-code token deployment on Stellar";
-const CONTRACT_AUTHOR: &str = "Nova Launch Team";
-const CONTRACT_LICENSE: &str = "MIT";
-const CONTRACT_VERSION: &str = "1.0.0";
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
+use types::{Error, FactoryState, TokenInfo, TokenCreationParams};
 
 #[contract]
 pub struct TokenFactory;
