@@ -117,6 +117,34 @@ pub struct StreamParams {
     pub cliff_time: u64,
 }
 
+/// Token creation parameters
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenCreationParams {
+    pub name: String,
+    pub symbol: String,
+    pub decimals: u32,
+    pub initial_supply: i128,
+    pub metadata_uri: Option<String>,
+}
+
+/// Timelock configuration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimelockConfig {
+    pub delay_seconds: u64,
+    pub enabled: bool,
+}
+
+/// Governance configuration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceConfig {
+    pub quorum_percent: u32,
+    pub approval_percent: u32,
+    pub voting_period: u64,
+}
+
 /// Current lifecycle state for a vault allocation.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -180,29 +208,6 @@ pub struct FeeUpdate {
 }
 
 /// Storage keys for contract data
-///
-/// Defines all storage locations used by the factory contract.
-/// Each variant maps to a specific piece of contract state.
-///
-/// # Variants
-/// * `Admin` - Factory administrator address
-/// * `Treasury` - Fee collection address
-/// * `BaseFee` - Base deployment fee amount
-/// * `MetadataFee` - Metadata deployment fee amount
-/// * `TokenCount` - Total number of tokens created
-/// * `Token(u32)` - Token info by index
-/// * `Balance(u32, Address)` - Token balance for holder
-/// * `BurnCount(u32)` - Number of burns for token
-/// * `TokenByAddress(Address)` - Token info lookup by address
-/// * `Paused` - Contract pause state
-/// * `TimelockConfig` - Timelock configuration
-/// * `PendingChange(u64)` - Pending change by ID
-/// * `NextChangeId` - Next available change ID
-/// * `CreatorTokens(Address)` - Vector of token indices for a creator
-/// * `CreatorTokenCount(Address)` - Number of tokens created by address
-/// * `TreasuryPolicy` - Treasury withdrawal policy
-/// * `WithdrawalPeriod` - Current withdrawal period tracking
-/// * `AllowedRecipient(Address)` - Whether address is allowed recipient
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
@@ -247,11 +252,6 @@ pub enum DataKey {
     CreatorVaultCount(Address),
 }
 
-/// Contract error codes
-///
-/// Every variant maps to a stable numeric code consumed by downstream clients.
-/// Vault lifecycle failures use codes 60-65 (`VaultNotFound`, `VaultLocked`,
-/// `VaultAlreadyClaimed`, `VaultCancelled`, `InvalidVaultConfig`, `NothingToClaim`).
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -296,19 +296,22 @@ pub enum Error {
     QuorumNotMet = 39,
     ProposalNotFound = 40,
     ProposalNotQueued = 41,
-    InvalidTimeWindow = 42,
-    PayloadTooLarge = 43,
-    AlreadyVoted = 44,
-    VotingClosed = 45,
-    AddressFrozen = 46,
-    FreezeNotEnabled = 47,
-    AddressNotFrozen = 48,
-    VaultNotFound = 49,
-    VaultLocked = 50,
-    VaultAlreadyClaimed = 51,
-    VaultCancelled = 52,
-    InvalidVaultConfig = 53,
-    NothingToClaim = 54,
+    InvalidProof = 42,
+    ProofRequired = 43,
+    InvalidTimeWindow = 44,
+    PayloadTooLarge = 45,
+    AlreadyVoted = 46,
+    VotingClosed = 47,
+    AddressFrozen = 48,
+    FreezeNotEnabled = 49,
+    AddressNotFrozen = 50,
+    VerificationUnavailable = 51,
+    VaultNotFound = 60,
+    VaultLocked = 61,
+    VaultAlreadyClaimed = 62,
+    VaultCancelled = 63,
+    InvalidVaultConfig = 64,
+    NothingToClaim = 65,
 }
 
 /// Governance configuration

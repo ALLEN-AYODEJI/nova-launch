@@ -46,6 +46,7 @@
 /// - Data types for all parameters must remain unchanged
 ///
 /// Any schema changes require creating a new version (e.g., init_v2).
+
 use soroban_sdk::{symbol_short, Address, BytesN, Env, String};
 
 /// Emit initialized event (v1)
@@ -403,6 +404,56 @@ pub fn emit_governance_updated(env: &Env, quorum_percent: u32, approval_percent:
     );
 }
 
+/// Emit proposal created event
+///
+/// Emitted when a new governance proposal is created
+pub fn emit_proposal_created(
+    env: &Env,
+    proposal_id: u64,
+    proposer: &Address,
+    action_type: crate::types::ActionType,
+) {
+    env.events().publish(
+        (symbol_short!("prop_cr"), proposal_id),
+        (proposer, action_type),
+    );
+}
+
+/// Emit proposal voted event
+///
+/// Emitted when a vote is cast on a proposal
+pub fn emit_proposal_voted(
+    env: &Env,
+    proposal_id: u64,
+    voter: &Address,
+    support: crate::types::VoteChoice,
+) {
+    env.events().publish(
+        (symbol_short!("prop_vote"), proposal_id),
+        (voter, support),
+    );
+}
+
+/// Emit proposal queued event
+///
+/// Emitted when a proposal is queued for execution
+pub fn emit_proposal_queued(env: &Env, proposal_id: u64, eta: u64) {
+    env.events().publish(
+        (symbol_short!("prop_que"), proposal_id),
+        (eta,),
+    );
+}
+
+/// Emit proposal executed event
+///
+/// Emitted when a proposal is successfully executed
+pub fn emit_proposal_executed(env: &Env, proposal_id: u64) {
+    env.events().publish(
+        (symbol_short!("prop_exec"), proposal_id),
+        (),
+    );
+}
+
 /// Emit stream metadata updated event (v1)
 ///
 /// **Schema Version**: 1
@@ -426,10 +477,11 @@ pub fn emit_stream_metadata_updated(
     has_metadata: bool,
 ) {
     env.events().publish(
-        (symbol_short!("strm_md"), stream_id),
+        (symbol_short!("vlt_md_v1"), stream_id),
         (updater, has_metadata),
     );
 }
+
 /// Emit metadata set event
 ///
 /// **Event Name**: meta_set
@@ -455,44 +507,12 @@ pub fn emit_metadata_set(
     );
 }
 
-/// Emit stream created event
-///
-/// Published when a new payment stream is created
-pub fn emit_stream_created(
-    env: &Env,
-    stream_id: u64,
-    creator: &Address,
-    recipient: &Address,
-    amount: i128,
-) {
-    env.events().publish(
-        (symbol_short!("strm_cr"),),
-        (stream_id, creator, recipient, amount),
-    );
-}
-
 /// Emit batch streams created event
 ///
 /// Published when multiple streams are created in a batch
 pub fn emit_batch_streams_created(env: &Env, creator: &Address, count: u32) {
     env.events()
         .publish((symbol_short!("bch_strm"),), (creator, count));
-}
-
-/// Emit stream claimed event
-///
-/// Published when tokens are claimed from a stream
-pub fn emit_stream_claimed(env: &Env, stream_id: u64, recipient: &Address, amount: i128) {
-    env.events()
-        .publish((symbol_short!("strm_clm"),), (stream_id, recipient, amount));
-}
-
-/// Emit stream cancelled event
-///
-/// Published when a stream is cancelled by creator
-pub fn emit_stream_cancelled(env: &Env, stream_id: u64, creator: &Address) {
-    env.events()
-        .publish((symbol_short!("strm_cnl"),), (stream_id, creator));
 }
 
 /// Emit vault created event
@@ -521,181 +541,145 @@ pub fn emit_vault_created(
     );
 }
 
-// ── Governance events (versioned for long-term indexer compatibility) ─────────────────────────────────────────
-
-/// Emit proposal created event (v1)
+/// Emit vault claimed event
 ///
-/// **Schema Version**: 1
-/// **Event Name**: prop_cr_v1 (abbreviated to fit 9-char limit)
-///
-/// **Topics** (indexed):
-/// - Event name: "prop_cr_v1"
-/// - proposal_id: u64 - The newly created proposal ID
-///
-/// **Payload** (non-indexed):
-/// - proposer: Address - The address that created the proposal
-/// - action_type: ActionType - The type of action being proposed
-/// - start_time: u64 - Voting start timestamp
-/// - end_time: u64 - Voting end timestamp
-/// - eta: u64 - Estimated execution time
-///
-/// **Schema Stability**: This schema is immutable. Any changes require a new version.
-///
-/// Emitted when a new governance proposal is created
-pub fn emit_proposal_created_v1(
-    env: &Env,
-    proposal_id: u64,
-    proposer: &Address,
-    action_type: crate::types::ActionType,
-    start_time: u64,
-    end_time: u64,
-    eta: u64,
-) {
-    env.events().publish(
-        (symbol_short!("prop_crv1"), proposal_id),
-        (proposer, action_type, start_time, end_time, eta),
-    );
-}
-
-/// Emit vote cast event (v1)
-///
-/// **Schema Version**: 1
-/// **Event Name**: vote_cs_v1 (abbreviated to fit 9-char limit)
-///
-/// **Topics** (indexed):
-/// - Event name: "vote_cs_v1"
-/// - proposal_id: u64 - The proposal being voted on
-///
-/// **Payload** (non-indexed):
-/// - voter: Address - The address that cast the vote
-/// - vote_choice: VoteChoice - The vote choice (For, Against, Abstain)
-///
-/// **Schema Stability**: This schema is immutable. Any changes require a new version.
-///
-/// Emitted when a vote is cast on a governance proposal
-pub fn emit_vote_cast_v1(
-    env: &Env,
-    proposal_id: u64,
-    voter: &Address,
-    vote_choice: crate::types::VoteChoice,
-) {
-    env.events().publish(
-        (symbol_short!("vote_csv1"), proposal_id),
-        (voter, vote_choice),
-    );
-}
-
-/// Emit proposal queued event (v1)
-///
-/// **Schema Version**: 1
-/// **Event Name**: prop_qu_v1 (abbreviated to fit 9-char limit)
-///
-/// **Topics** (indexed):
-/// - Event name: "prop_qu_v1"
-/// - proposal_id: u64 - The proposal being queued
-///
-/// **Payload** (non-indexed):
-/// - eta: u64 - Estimated execution time
-///
-/// **Schema Stability**: This schema is immutable. Any changes require a new version.
-///
-/// Emitted when a proposal is queued for execution (after voting succeeds)
-pub fn emit_proposal_queued_v1(env: &Env, proposal_id: u64, eta: u64) {
+/// Published when a vault owner claims unlocked tokens.
+pub fn emit_vault_claimed(env: &Env, vault_id: u64, owner: &Address, amount: i128) {
     env.events()
-        .publish((symbol_short!("prop_quv1"), proposal_id), (eta,));
+        .publish((symbol_short!("vlt_clm"), vault_id), (owner.clone(), amount));
 }
 
-/// Emit proposal executed event (v1)
+/// Emit vault cancelled event
 ///
-/// **Schema Version**: 1
-/// **Event Name**: prop_ex_v1 (abbreviated to fit 9-char limit)
-///
-/// **Topics** (indexed):
-/// - Event name: "prop_ex_v1"
-/// - proposal_id: u64 - The proposal being executed
-///
-/// **Payload** (non-indexed):
-/// - executor: Address - The address that executed the proposal
-/// - success: bool - Whether execution succeeded
-///
-/// **Schema Stability**: This schema is immutable. Any changes require a new version.
-///
-/// Emitted when a proposal is executed
-pub fn emit_proposal_executed_v1(env: &Env, proposal_id: u64, executor: &Address, success: bool) {
+/// Published when a vault is cancelled by an authorized actor.
+pub fn emit_vault_cancelled(
+    env: &Env,
+    vault_id: u64,
+    actor: &Address,
+    remaining_amount: i128,
+) {
     env.events().publish(
-        (symbol_short!("prop_exv1"), proposal_id),
-        (executor, success),
+        (symbol_short!("vlt_cnl"), vault_id),
+        (actor.clone(), remaining_amount),
     );
 }
 
-/// Emit proposal cancelled event (v1)
-///
+// ═══════════════════════════════════════════════════════════════════════
+// Vault/Stream Events (v1)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Emit vault/stream created event (v1)
+/// 
 /// **Schema Version**: 1
-/// **Event Name**: prop_ca_v1 (abbreviated to fit 9-char limit)
-///
+/// **Event Name**: vlt_cr_v1
+/// 
 /// **Topics** (indexed):
-/// - Event name: "prop_ca_v1"
-/// - proposal_id: u64 - The proposal being cancelled
-///
+/// - Event name: "vlt_cr_v1"
+/// - stream_id: u32 - The unique identifier for the created stream
+/// 
 /// **Payload** (non-indexed):
-/// - canceller: Address - The address that cancelled the proposal
-///
+/// - creator: Address - The address that created the stream
+/// - recipient: Address - The address that will receive the vested tokens
+/// - amount: i128 - Total amount of tokens to be vested
+/// - has_metadata: bool - Whether metadata was provided
+/// 
 /// **Schema Stability**: This schema is immutable. Any changes require a new version.
-///
-/// Emitted when a proposal is cancelled
-pub fn emit_proposal_cancelled_v1(env: &Env, proposal_id: u64, canceller: &Address) {
-    env.events()
-        .publish((symbol_short!("prop_cav1"), proposal_id), (canceller,));
-}
-
-// ── Aliases for backward compatibility ───────────────────────
-
-pub fn emit_proposal_created(
+/// 
+/// Emitted when a new vesting stream is created
+pub fn emit_stream_created(
     env: &Env,
-    proposal_id: u64,
-    proposer: &Address,
-    action_type: crate::types::ActionType,
-    start_time: u64,
-    end_time: u64,
-    eta: u64,
+    stream_id: u32,
+    creator: &Address,
+    recipient: &Address,
+    amount: i128,
+    has_metadata: bool,
 ) {
-    emit_proposal_created_v1(
-        env,
-        proposal_id,
-        proposer,
-        action_type,
-        start_time,
-        end_time,
-        eta,
+    env.events().publish(
+        (symbol_short!("vlt_cr_v1"), stream_id),
+        (creator, recipient, amount, has_metadata),
     );
 }
 
-pub fn emit_vote_cast(
+/// Emit vault/stream funded event (v1)
+/// 
+/// **Schema Version**: 1
+/// **Event Name**: vlt_fd_v1
+/// 
+/// **Topics** (indexed):
+/// - Event name: "vlt_fd_v1"
+/// - stream_id: u32 - The stream identifier
+/// 
+/// **Payload** (non-indexed):
+/// - funder: Address - The address that funded the stream
+/// - amount: i128 - Amount of tokens funded
+/// 
+/// **Schema Stability**: This schema is immutable. Any changes require a new version.
+/// 
+/// Emitted when a stream is funded with tokens
+pub fn emit_stream_funded(
     env: &Env,
-    proposal_id: u64,
-    voter: &Address,
-    vote_choice: crate::types::VoteChoice,
+    stream_id: u32,
+    funder: &Address,
+    amount: i128,
 ) {
-    emit_vote_cast_v1(env, proposal_id, voter, vote_choice);
+    env.events().publish(
+        (symbol_short!("vlt_fd_v1"), stream_id),
+        (funder, amount),
+    );
 }
 
-pub fn emit_proposal_voted(
+/// Emit vault/stream claimed event (v1)
+/// 
+/// **Schema Version**: 1
+/// **Event Name**: vlt_cl_v1
+/// 
+/// **Topics** (indexed):
+/// - Event name: "vlt_cl_v1"
+/// - stream_id: u32 - The stream identifier
+/// 
+/// **Payload** (non-indexed):
+/// - recipient: Address - The address that claimed tokens
+/// - amount: i128 - Amount of tokens claimed
+/// 
+/// **Schema Stability**: This schema is immutable. Any changes require a new version.
+/// 
+/// Emitted when tokens are claimed from a stream
+pub fn emit_stream_claimed(
     env: &Env,
-    proposal_id: u64,
-    voter: &Address,
-    vote_choice: crate::types::VoteChoice,
+    stream_id: u32,
+    recipient: &Address,
+    amount: i128,
 ) {
-    emit_vote_cast_v1(env, proposal_id, voter, vote_choice);
+    env.events().publish(
+        (symbol_short!("vlt_cl_v1"), stream_id),
+        (recipient, amount),
+    );
 }
 
-pub fn emit_proposal_queued(env: &Env, proposal_id: u64, eta: u64) {
-    emit_proposal_queued_v1(env, proposal_id, eta);
-}
-
-pub fn emit_proposal_executed(env: &Env, proposal_id: u64, executor: &Address, success: bool) {
-    emit_proposal_executed_v1(env, proposal_id, executor, success);
-}
-
-pub fn emit_proposal_cancelled(env: &Env, proposal_id: u64, canceller: &Address) {
-    emit_proposal_cancelled_v1(env, proposal_id, canceller);
+/// Emit vault/stream cancelled event (v1)
+/// 
+/// **Schema Version**: 1
+/// **Event Name**: vlt_cn_v1
+/// 
+/// **Topics** (indexed):
+/// - Event name: "vlt_cn_v1"
+/// - stream_id: u32 - The stream identifier
+/// 
+/// **Payload** (non-indexed):
+/// - canceller: Address - The address that cancelled the stream
+/// - remaining_amount: i128 - Amount of unvested tokens returned
+/// 
+/// **Schema Stability**: This schema is immutable. Any changes require a new version.
+/// 
+/// Emitted when a stream is cancelled before completion
+pub fn emit_stream_cancelled(
+    env: &Env,
+    stream_id: u32,
+    canceller: &Address,
+    remaining_amount: i128,
+) {
+    env.events().publish(
+        (symbol_short!("vlt_cn_v1"), stream_id),
+        (canceller, remaining_amount),
+    );
 }

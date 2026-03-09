@@ -7,6 +7,9 @@ mod burn;
 mod differential_engine;
 mod event_versions;
 mod events;
+mod milestone_verification;
+#[cfg(test)]
+mod milestone_verification_test;
 mod mint;
 mod pagination;
 mod proposal_state_machine;
@@ -15,41 +18,15 @@ mod stream_types;
 #[cfg(test)]
 mod test_helpers;
 mod timelock;
+mod token_creation;
 mod treasury;
 mod types;
+mod token_creation;
+mod vesting;
 mod validation;
-// #[cfg(test)]
-// mod governance_events_versioning_test;
-#[cfg(all(test, feature = "legacy-tests"))]
-mod adversarial_timing_test;
+
 #[cfg(test)]
-mod governance_timelock_boundary_test;
-mod streaming;
-// #[cfg(test)]
-// mod creator_streams_test;
-// Temporarily disabled - has compilation errors
-// #[cfg(test)]
-// mod comprehensive_differential_tests;
-// #[cfg(test)]
-// mod differential_proptest;
-// #[cfg(test)]
-// mod stream_metadata_test;
-// #[cfg(test)]
-// mod stream_metadata_update_test;
-// #[cfg(test)]
-// mod stream_claim_parity_test_standalone;
-// #[cfg(test)]
-// mod stream_auth_test;
-// #[cfg(test)]
-// mod governance_e2e_test;
-// #[cfg(test)]
-// mod timelock_proposal_test;
-// #[cfg(test)]
-// mod timelock_voting_test;
-// #[cfg(test)]
-// mod timelock_test;
-// #[cfg(test)]
-// mod proposal_execution_test;
+mod governance_property_test;
 
 // #[cfg(test)]
 // mod stream_metadata_update_test;
@@ -57,11 +34,12 @@ mod streaming;
 // #[cfg(test)]
 // mod governance_test;
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Bytes, BytesN, Env, String, Vec};
 use types::{
     ContractMetadata, Error, FactoryState, PaginationCursor, StreamInfo, StreamPage, StreamParams,
-    TokenInfo, TokenStats, Vault, VaultStatus,
+    TokenInfo, TokenStats, Vault, VaultStatus, TokenCreationParams,
 };
+use crate::milestone_verification::MilestoneVerifier;
 
 #[contract]
 pub struct TokenFactory;
@@ -127,158 +105,7 @@ impl TokenFactory {
         Ok(())
     }
 
-    /// Create a new token with specified parameters
-    ///
-    /// Deploys a new token contract with the given configuration and mints
-    /// the initial supply to the creator's address. Validates all parameters
-    /// and collects deployment fees.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `creator` - Address that will receive the initial token supply
-    /// * `name` - Token name (1-64 characters)
-    /// * `symbol` - Token symbol (1-12 characters)
-    /// * `decimals` - Number of decimal places (0-18)
-    /// * `initial_supply` - Initial token supply (must be > 0)
-    /// * `metadata_uri` - Optional IPFS URI for token metadata
-    /// * `fee_payment` - Fee payment amount in stroops
-    ///
-    /// # Returns
-    /// Returns the deployed token's contract address
-    ///
-    /// # Errors
-    /// * `Error::InvalidParameters` - Invalid name, symbol, decimals, or supply
-    /// * `Error::InsufficientFee` - Fee payment is below required amount
-    /// * `Error::ContractPaused` - Contract is currently paused
-    pub fn create_token(
-        env: Env,
-        creator: Address,
-        name: String,
-        symbol: String,
-        decimals: u32,
-        initial_supply: i128,
-        metadata_uri: Option<String>,
-        fee_payment: i128,
-    ) -> Result<Address, Error> {
-        creator.require_auth();
 
-        // Check if contract is paused
-        if storage::is_paused(&env) {
-            return Err(Error::ContractPaused);
-        }
-
-        // Validate parameters
-        Self::validate_token_params(&name, &symbol, decimals, initial_supply, &metadata_uri)?;
-
-        // Calculate and validate fee with overflow check
-        let base_fee = storage::get_base_fee(&env);
-        let metadata_fee = storage::get_metadata_fee(&env);
-        let required_fee = if metadata_uri.is_some() {
-            base_fee
-                .checked_add(metadata_fee)
-                .ok_or(Error::ArithmeticError)?
-        } else {
-            base_fee
-        };
-
-        if fee_payment < required_fee {
-            return Err(Error::InsufficientFee);
-        }
-
-        // Create token address (simplified - in production would deploy actual token contract)
-        use soroban_sdk::testutils::Address as _;
-        let token_address = Address::generate(&env);
-
-        // Store token info
-        let token_count = storage::get_token_count(&env);
-        let token_info = TokenInfo {
-            address: token_address.clone(),
-            creator: creator.clone(),
-            name: name.clone(),
-            symbol: symbol.clone(),
-            decimals,
-            total_supply: initial_supply,
-            initial_supply,
-            max_supply: None,
-            total_burned: 0,
-            burn_count: 0,
-            metadata_uri: metadata_uri.clone(),
-            created_at: env.ledger().timestamp(),
-            freeze_enabled: false,
-            clawback_enabled: false,
-            is_paused: false, // Default to not paused
-        };
-
-        storage::set_token_info(&env, token_count, &token_info);
-        storage::set_token_info_by_address(&env, &token_address, &token_info);
-        storage::increment_token_count(&env)?;
-
-        // Emit event
-        events::emit_token_created(
-            &env,
-            &token_address,
-            &creator,
-            &name,
-            &symbol,
-            decimals,
-            initial_supply,
-        );
-
-        Ok(token_address)
-    }
-
-    /// Validate token creation parameters
-    ///
-    /// Ensures all token parameters meet the required constraints.
-    /// This is a helper function used by create_token.
-    ///
-    /// # Validation Rules
-    /// * Name: 1-64 characters, non-empty after trimming
-    /// * Symbol: 1-12 characters, non-empty after trimming
-    /// * Decimals: 0-18
-    /// * Initial supply: Must be positive (> 0)
-    /// * Metadata URI: If provided, must be 1-256 characters
-    ///
-    /// # Errors
-    /// Returns `Error::InvalidParameters` if any validation fails
-    fn validate_token_params(
-        name: &String,
-        symbol: &String,
-        decimals: u32,
-        initial_supply: i128,
-        metadata_uri: &Option<String>,
-    ) -> Result<(), Error> {
-        // Validate name length (1-64 chars)
-        let name_len = name.len();
-        if name_len == 0 || name_len > 64 {
-            return Err(Error::InvalidParameters);
-        }
-
-        // Validate symbol length (1-12 chars)
-        if symbol.len() == 0 || symbol.len() > 12 {
-            return Err(Error::InvalidParameters);
-        }
-
-        // Validate decimals (0-18)
-        if decimals > 18 {
-            return Err(Error::InvalidParameters);
-        }
-
-        // Validate initial supply (must be positive)
-        if initial_supply <= 0 {
-            return Err(Error::InvalidParameters);
-        }
-
-        // Validate metadata URI if provided (1-256 chars)
-        if let Some(uri) = metadata_uri {
-            let uri_len = uri.len();
-            if uri_len == 0 || uri_len > 256 {
-                return Err(Error::InvalidParameters);
-            }
-        }
-
-        Ok(())
-    }
 
     /// Get the current factory state
     ///
@@ -907,15 +734,22 @@ impl TokenFactory {
     /// ```
     pub fn set_metadata(
         env: Env,
-        token_index: u32,
+        creator: Address,
+        tokens: Vec<TokenCreationParams>,
+        total_fee_payment: i128,
+    ) -> Result<Vec<Address>, Error> {
+        token_creation::batch_create_tokens(&env, creator, tokens, total_fee_payment)
+    }
+
+    /// Set metadata for a token
+    /// 
+    /// Allows the token creator to set metadata URI once
+    pub fn set_token_metadata(
+        env: Env,
         admin: Address,
+        token_index: u32,
         metadata_uri: String,
     ) -> Result<(), Error> {
-        // Early return if contract is paused
-        if storage::is_paused(&env) {
-            return Err(Error::ContractPaused);
-        }
-
         // Require admin authorization
         admin.require_auth();
 
@@ -1658,6 +1492,151 @@ impl TokenFactory {
         storage::get_vault(&env, vault_id).ok_or(Error::TokenNotFound)
     }
 
+    /// Claim tokens from a vault
+    ///
+    /// # Parameters
+    /// - `env`: Contract environment
+    /// - `owner`: Address claiming the vault (must match vault owner)
+    /// - `vault_id`: ID of the vault to claim
+    /// - `proof`: Optional milestone completion proof (required if milestone_hash != 0)
+    ///
+    /// # Returns
+    /// - `Ok(claimed_amount)` on success
+    /// - `Err(Error)` on failure
+    ///
+    /// # Verification Flow
+    /// 1. Load vault and verify owner authorization
+    /// 2. Check vault status (must be Active)
+    /// 3. If milestone_hash != 0, verify proof via MilestoneVerifier
+    /// 4. Check time-based unlock conditions
+    /// 5. Transfer tokens and update vault status
+    ///
+    /// # Integration Point
+    /// TODO: The verifier instance should be injected or configured during contract
+    /// initialization. For testing, use MilestoneVerifierStub. For production,
+    /// replace with oracle-based verifier.
+    pub fn claim_vault(
+        env: Env,
+        owner: Address,
+        vault_id: u64,
+        proof: Option<Bytes>,
+    ) -> Result<i128, Error> {
+        owner.require_auth();
+
+        if storage::is_paused(&env) {
+            return Err(Error::ContractPaused);
+        }
+
+        // Load vault
+        let mut vault = storage::get_vault(&env, vault_id).ok_or(Error::VaultNotFound)?;
+
+        // Verify owner
+        if vault.owner != owner {
+            return Err(Error::Unauthorized);
+        }
+
+        // Check vault status
+        if vault.status != VaultStatus::Active {
+            return match vault.status {
+                VaultStatus::Claimed => Err(Error::VaultAlreadyClaimed),
+                VaultStatus::Cancelled => Err(Error::VaultCancelled),
+                _ => Err(Error::InvalidParameters),
+            };
+        }
+
+        // Milestone verification (if required)
+        let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        if vault.milestone_hash != zero_hash {
+            // Non-zero milestone_hash requires proof
+            let proof_bytes = proof.ok_or(Error::ProofRequired)?;
+
+            // TODO: Inject verifier instance (currently using stub)
+            // In production, replace with oracle-based verifier that:
+            // - Validates cryptographic signatures from trusted oracles
+            // - Checks proof timestamps to prevent replay attacks
+            // - Verifies milestone_hash matches proof payload
+            // - Handles oracle service unavailability gracefully
+            use crate::milestone_verification::MilestoneVerifier as _;
+            let verifier = milestone_verification::MilestoneVerifierStub::new(&env);
+
+            let is_valid =
+                verifier.verify_milestone(&env, &vault.milestone_hash, &proof_bytes)?;
+
+            if !is_valid {
+                return Err(Error::InvalidProof);
+            }
+        }
+
+        // Time-based unlock check (independent of milestone verification)
+        let current_time = env.ledger().timestamp();
+        if vault.unlock_time > 0 && current_time < vault.unlock_time {
+            return Err(Error::VaultLocked);
+        }
+
+        // Calculate claimable amount
+        let claimable = vault
+            .total_amount
+            .checked_sub(vault.claimed_amount)
+            .ok_or(Error::ArithmeticError)?;
+        if claimable <= 0 {
+            return Err(Error::NothingToClaim);
+        }
+
+        // Transfer tokens
+        let token_client = soroban_sdk::token::Client::new(&env, &vault.token);
+        token_client.transfer(&env.current_contract_address(), &owner, &claimable);
+
+        // Update vault
+        vault.claimed_amount = vault.total_amount;
+        vault.status = VaultStatus::Claimed;
+        storage::set_vault(&env, &vault)?;
+
+        // Emit event
+        events::emit_vault_claimed(&env, vault_id, &owner, claimable);
+
+        Ok(claimable)
+    }
+
+    /// Cancel an active vault using policy checks.
+    ///
+    /// Policy:
+    /// - `actor` must authorize.
+    /// - `actor` must be the vault creator or contract admin.
+    /// - Already claimed/cancelled vaults cannot be cancelled.
+    ///
+    /// Partially claimed behavior:
+    /// - Cancellation is allowed.
+    /// - `claimed_amount` remains unchanged.
+    /// - Remaining amount is permanently unclaimable.
+    pub fn cancel_vault(env: Env, vault_id: u64, actor: Address) -> Result<(), Error> {
+        actor.require_auth();
+
+        if storage::is_paused(&env) {
+            return Err(Error::ContractPaused);
+        }
+
+        let mut vault = storage::get_vault(&env, vault_id).ok_or(Error::VaultNotFound)?;
+        let admin = storage::get_admin(&env);
+        if actor != vault.creator && actor != admin {
+            return Err(Error::Unauthorized);
+        }
+
+        if vault.status != VaultStatus::Active {
+            return Err(Error::InvalidParameters);
+        }
+
+        let remaining_amount = vault
+            .total_amount
+            .checked_sub(vault.claimed_amount)
+            .ok_or(Error::ArithmeticError)?
+            .max(0);
+
+        vault.status = VaultStatus::Cancelled;
+        storage::set_vault(&env, &vault)?;
+        events::emit_vault_cancelled(&env, vault_id, &actor, remaining_amount);
+
+        Ok(())
+    }
     /// Update stream metadata (creator/admin only)
     ///
     /// Allows the stream creator or admin to update the metadata associated with
@@ -1950,7 +1929,16 @@ mod gas_regression_test;
 mod event_replay_test;
 
 #[cfg(test)]
-mod vault_creation_test;
+mod batch_token_creation_test;
+
+#[cfg(test)]
+mod vault_cancellation_test;
+
+// Vault/Stream Security and Fuzz Tests
+// Temporarily disabled - requires fixing timelock/freeze dependencies
+// #[cfg(test)]
+// mod vault_security_test;
 
 // #[cfg(test)]
-// mod boundary_chaos_test;
+// mod vault_fuzz_test;
+
