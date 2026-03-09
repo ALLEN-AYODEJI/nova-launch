@@ -122,7 +122,7 @@ run_test() {
     
     if [ $result -ne 0 ]; then
         FAILED=$((FAILED + 1))
-        echo -e "${RED}✗ Failed${NC}"
+        echo -e "${RED}✗ Failed (exit code: $result)${NC}"
     else
         echo -e "${GREEN}✓ Passed${NC}"
     fi
