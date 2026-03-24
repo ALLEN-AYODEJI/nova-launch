@@ -25,10 +25,12 @@ const STATUS_MESSAGES: Record<DeploymentStatus, string> = {
 interface UseTokenDeployOptions {
     maxRetries?: number;
     retryDelay?: number;
+    baseFee?: number;
+    metadataFee?: number;
 }
 
 export function useTokenDeploy(network: 'testnet' | 'mainnet', options: UseTokenDeployOptions = {}) {
-    const { maxRetries = 3, retryDelay = 2000 } = options;
+    const { maxRetries = 3, retryDelay = 2000, baseFee, metadataFee } = options;
     const [status, setStatus] = useState<DeploymentStatus>('idle');
     const [error, setError] = useState<AppError | null>(null);
     const [retryCount, setRetryCount] = useState(0);
@@ -127,7 +129,7 @@ export function useTokenDeploy(network: 'testnet' | 'mainnet', options: UseToken
 
         setStatus('deploying');
         try {
-            const feeBreakdown = getDeploymentFeeBreakdown(Boolean(metadataUri));
+            const feeBreakdown = getDeploymentFeeBreakdown(Boolean(metadataUri), baseFee, metadataFee);
             const feePayment = BigInt(Math.round(feeBreakdown.totalFee * 10_000_000));
             const serviceResult = await stellarService.deployToken({
                 ...params,
@@ -221,7 +223,6 @@ export function useTokenDeploy(network: 'testnet' | 'mainnet', options: UseToken
         error,
         retryCount,
         canRetry: retryCount < maxRetries && lastParams !== null && status === 'error',
-        getFeeBreakdown: getDeploymentFeeBreakdown,
     };
 }
 
