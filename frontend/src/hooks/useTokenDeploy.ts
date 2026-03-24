@@ -9,6 +9,7 @@ import {
 } from '../utils/validation';
 import { IPFSService } from '../services/IPFSService';
 import { StellarService } from '../services/stellar.service';
+import { TransactionHistoryStorage } from '../services/TransactionHistoryStorage';
 import { getDeploymentFeeBreakdown } from '../utils/feeCalculation';
 import { analytics, AnalyticsEvent } from '../services/analytics';
 import { useAnalytics } from './useAnalytics';
@@ -42,6 +43,13 @@ export function useTokenDeploy(network: 'testnet' | 'mainnet', options: UseToken
         setStatus('idle');
         setLastParams(params);
         setRetryCount(0);
+
+        if (!params.adminWallet) {
+            const appError = createError(ErrorCode.WALLET_NOT_CONNECTED, 'Connect your wallet before deploying.');
+            setError(appError);
+            setStatus('error');
+            throw appError;
+        }
 
         // Track initiation (no PII). Do NOT include wallet or addresses.
         try {
@@ -121,12 +129,19 @@ export function useTokenDeploy(network: 'testnet' | 'mainnet', options: UseToken
         try {
             const feeBreakdown = getDeploymentFeeBreakdown(Boolean(metadataUri));
             const feePayment = BigInt(Math.round(feeBreakdown.totalFee * 10_000_000));
-            const result = await stellarService.deployToken({
+            const serviceResult = await stellarService.deployToken({
                 ...params,
                 metadataUri,
                 creatorAddress: params.adminWallet,
                 feePayment,
             });
+            const result: DeploymentResult = {
+                tokenAddress: serviceResult.tokenAddress,
+                transactionHash: serviceResult.transactionHash,
+                totalFee: String(feeBreakdown.totalFee),
+                timestamp: Date.now(),
+                metadataUrl: metadataUri,
+            };
             try {
                 analytics.track(AnalyticsEvent.TOKEN_DEPLOYED, {
                     network,
@@ -227,10 +242,11 @@ function saveDeploymentRecord(
         transactionHash: result.transactionHash,
     };
 
-    const storageKey = `tokens_${params.adminWallet}`;
-    const existingRaw = localStorage.getItem(storageKey);
-    const existing = existingRaw ? (JSON.parse(existingRaw) as TokenInfo[]) : [];
-    localStorage.setItem(storageKey, JSON.stringify([token, ...existing]));
+    try {
+        TransactionHistoryStorage.getInstance().addToken(params.adminWallet, token);
+    } catch {
+        // Storage quota exceeded — non-fatal, deployment already succeeded
+    }
 }
 
 function mapDeploymentError(error: unknown): AppError {
