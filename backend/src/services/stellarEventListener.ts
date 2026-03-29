@@ -471,8 +471,13 @@ export class StellarEventListener {
    * Check if event is a campaign/buyback event (registry-backed)
    */
   private isBuybackEvent(event: StellarEvent): boolean {
-    const kind = kindForTopic(event.topic?.[0] ?? '');
-    return kind?.startsWith('campaign_') ?? false;
+    const topic0 = event.topic[0];
+    return [
+      'camp_cr_v1', 'camp_cr',
+      'camp_ex_v1', 'camp_ex',
+      'camp_st_v1', 'camp_st',
+      'buyback_exec',
+    ].includes(topic0);
   }
 
   /**
