@@ -140,8 +140,9 @@ export class GovernanceEventParser {
    */
   async parseProposalCreatedEvent(event: ProposalCreatedEvent): Promise<void> {
     try {
-      await this.prisma.proposal.create({
-        data: {
+      await this.prisma.proposal.upsert({
+        where: { proposalId: event.proposalId },
+        create: {
           proposalId: event.proposalId,
           tokenId: event.tokenAddress,
           proposer: event.proposer,
@@ -157,6 +158,7 @@ export class GovernanceEventParser {
           txHash: event.txHash,
           createdAt: event.timestamp,
         },
+        update: {}, // no-op on replay — proposal fields are immutable after creation
       });
 
       console.log(`Proposal ${event.proposalId} created successfully`);
@@ -171,7 +173,6 @@ export class GovernanceEventParser {
    */
   async parseVoteCastEvent(event: VoteCastEvent): Promise<void> {
     try {
-      // Find the proposal by proposalId
       const proposal = await this.prisma.proposal.findUnique({
         where: { proposalId: event.proposalId },
       });
@@ -180,8 +181,9 @@ export class GovernanceEventParser {
         throw new Error(`Proposal ${event.proposalId} not found`);
       }
 
-      await this.prisma.vote.create({
-        data: {
+      await this.prisma.vote.upsert({
+        where: { txHash: event.txHash },
+        create: {
           proposalId: proposal.id,
           voter: event.voter,
           support: event.support,
@@ -190,6 +192,7 @@ export class GovernanceEventParser {
           txHash: event.txHash,
           timestamp: event.timestamp,
         },
+        update: {}, // no-op on replay — votes are immutable
       });
 
       console.log(`Vote cast for proposal ${event.proposalId} by ${event.voter}`);
@@ -244,9 +247,9 @@ export class GovernanceEventParser {
           errorMessage: errorDetails?.message,
           errorDetails: errorDetails?.details,
         },
+        update: {}, // no-op on replay
       });
 
-      // Update proposal status
       await this.prisma.proposal.update({
         where: { id: proposal.id },
         data: {
@@ -284,6 +287,8 @@ export class GovernanceEventParser {
         data: {
           status: ProposalStatus.CANCELLED,
           cancelledAt: event.timestamp,
+          canceller: event.canceller,
+          cancelReason: event.reason ?? null,
         },
       });
 
